@@ -1,6 +1,9 @@
 # Environment variables
 .env
 
+# Cached TimeTree session cookie
+.session_cache.json
+
 # Google OAuth credentials
 credentials.json
 token.json

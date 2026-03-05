@@ -6,6 +6,8 @@ using browser session cookies for authentication.
 """
 
 import os
+import json
+import time
 import requests
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
@@ -17,17 +19,19 @@ class TimeTreeClient:
 
     BASE_URL = "https://timetreeapp.com"
 
+    COOKIE_CACHE_FILE = '.session_cache.json'
+
     @staticmethod
-    def login_with_selenium(email: str, password: str) -> str:
+    def login_with_selenium(email: str, password: str) -> tuple:
         """
-        Log in to TimeTree using Selenium and return the session cookie value.
+        Log in to TimeTree using Selenium and return the session cookie value and expiry.
 
         Args:
             email: TimeTree account email
             password: TimeTree account password
 
         Returns:
-            Session cookie value (_session_id)
+            Tuple of (cookie_value, expiry_timestamp)
         """
         from selenium import webdriver
         from selenium.webdriver.common.by import By
@@ -57,9 +61,28 @@ class TimeTreeClient:
             cookie = driver.get_cookie('_session_id')
             if not cookie:
                 raise ValueError("Login failed - session cookie not found after login")
-            return cookie['value']
+            return cookie['value'], cookie.get('expiry')
         finally:
             driver.quit()
+
+    def _get_session_cookie(self, email: str, password: str) -> str:
+        """Return a valid session cookie, using cache if available."""
+        if os.path.exists(self.COOKIE_CACHE_FILE):
+            with open(self.COOKIE_CACHE_FILE) as f:
+                cache = json.load(f)
+            expiry = cache.get('expiry')
+            if expiry is None or expiry > time.time():
+                print("Using cached session cookie.")
+                return cache['value']
+            print("Cached session cookie expired, logging in again...")
+        else:
+            print("No cached session cookie, logging in with Selenium...")
+
+        value, expiry = self.login_with_selenium(email, password)
+        with open(self.COOKIE_CACHE_FILE, 'w') as f:
+            json.dump({'value': value, 'expiry': expiry}, f)
+        print("Login successful.")
+        return value
 
     def __init__(self, session_cookie: Optional[str] = None, csrf_token: Optional[str] = None):
         """
@@ -77,9 +100,7 @@ class TimeTreeClient:
             email = os.getenv('TIMETREE_EMAIL')
             password = os.getenv('TIMETREE_PASSWORD')
             if email and password:
-                print("No session cookie found, logging in with Selenium...")
-                self.session_cookie = self.login_with_selenium(email, password)
-                print("Login successful.")
+                self.session_cookie = self._get_session_cookie(email, password)
             else:
                 raise ValueError(
                     "No TimeTree credentials found. "
