@@ -17,6 +17,50 @@ class TimeTreeClient:
 
     BASE_URL = "https://timetreeapp.com"
 
+    @staticmethod
+    def login_with_selenium(email: str, password: str) -> str:
+        """
+        Log in to TimeTree using Selenium and return the session cookie value.
+
+        Args:
+            email: TimeTree account email
+            password: TimeTree account password
+
+        Returns:
+            Session cookie value (_session_id)
+        """
+        from selenium import webdriver
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.webdriver.firefox.options import Options
+        from selenium.webdriver.firefox.service import Service
+        from webdriver_manager.firefox import GeckoDriverManager
+
+        options = Options()
+        options.add_argument('--headless')
+        driver = webdriver.Firefox(service=Service(GeckoDriverManager().install()), options=options)
+
+        try:
+            driver.get('https://timetreeapp.com/signin')
+
+            wait = WebDriverWait(driver, 15)
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'input[type="email"], input[name="email"]')))
+
+            driver.find_element(By.CSS_SELECTOR, 'input[type="email"], input[name="email"]').send_keys(email)
+            driver.find_element(By.CSS_SELECTOR, 'input[type="password"]').send_keys(password)
+            driver.find_element(By.CSS_SELECTOR, 'input[type="password"]').submit()
+
+            # Wait for login to complete (redirects to /calendars/...)
+            wait.until(EC.url_contains('/calendars/'))
+
+            cookie = driver.get_cookie('_session_id')
+            if not cookie:
+                raise ValueError("Login failed - session cookie not found after login")
+            return cookie['value']
+        finally:
+            driver.quit()
+
     def __init__(self, session_cookie: Optional[str] = None, csrf_token: Optional[str] = None):
         """
         Initialize the TimeTree client.
@@ -30,10 +74,17 @@ class TimeTreeClient:
         self.csrf_token = csrf_token or os.getenv('TIMETREE_CSRF_TOKEN')
 
         if not self.session_cookie:
-            raise ValueError(
-                "TimeTree session cookie not provided. "
-                "Set TIMETREE_SESSION_COOKIE in .env or pass as argument."
-            )
+            email = os.getenv('TIMETREE_EMAIL')
+            password = os.getenv('TIMETREE_PASSWORD')
+            if email and password:
+                print("No session cookie found, logging in with Selenium...")
+                self.session_cookie = self.login_with_selenium(email, password)
+                print("Login successful.")
+            else:
+                raise ValueError(
+                    "No TimeTree credentials found. "
+                    "Set TIMETREE_SESSION_COOKIE or TIMETREE_EMAIL+TIMETREE_PASSWORD in .env"
+                )
 
         self.session = requests.Session()
         self.session.headers.update({
