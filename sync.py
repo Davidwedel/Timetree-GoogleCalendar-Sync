@@ -137,13 +137,6 @@ def main():
         try:
             sync = GoogleCalendarSync()
 
-            if args.clear_first:
-                print("Warning: This will clear all existing events!")
-                response = input("Continue? (yes/no): ")
-                if response.lower() != 'yes':
-                    print("Cancelled.")
-                    return 0
-
             stats = sync.sync_events(
                 google_calendar_id,
                 events,
