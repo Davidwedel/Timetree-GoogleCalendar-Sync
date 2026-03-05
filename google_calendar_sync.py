@@ -6,6 +6,8 @@ Syncs TimeTree events to Google Calendar using the Google Calendar API.
 
 import os
 import pickle
+import hashlib
+import json
 from datetime import datetime
 from typing import List, Dict, Optional
 from google.auth.transport.requests import Request
@@ -152,25 +154,116 @@ class GoogleCalendarSync:
         Returns:
             Dictionary with sync statistics
         """
-        stats = {'created': 0, 'failed': 0, 'cleared': 0}
+        stats = {'created': 0, 'updated': 0, 'skipped': 0, 'deleted': 0, 'failed': 0, 'cleared': 0}
 
-        # Optionally clear existing events
         if clear_existing:
             print("Clearing existing events...")
             stats['cleared'] = self._clear_calendar(calendar_id)
+            print(f"Syncing {len(events)} events...")
+            for event in events:
+                result = self.create_event(calendar_id, event, timezone)
+                if result:
+                    stats['created'] += 1
+                else:
+                    stats['failed'] += 1
+            return stats
 
-        # Create events
+        # Smart sync: compare against what's already in Google Calendar
+        print("Fetching existing synced events...")
+        existing = self._get_synced_events(calendar_id)
+
+        timetree_ids = set()
         print(f"Syncing {len(events)} events...")
         for event in events:
-            result = self.create_event(calendar_id, event, timezone)
-            if result:
-                stats['created'] += 1
-                print(f"  ✓ Created: {event.get('title', 'Untitled')}")
+            timetree_id = str(event.get('id', ''))
+            if not timetree_id:
+                continue
+            timetree_ids.add(timetree_id)
+            new_hash = self._compute_hash(event)
+
+            if timetree_id not in existing:
+                result = self.create_event(calendar_id, event, timezone)
+                if result:
+                    stats['created'] += 1
+                    print(f"  + Created: {event.get('title', 'Untitled')}")
+                else:
+                    stats['failed'] += 1
+                    print(f"  ✗ Failed: {event.get('title', 'Untitled')}")
+            elif existing[timetree_id]['hash'] != new_hash:
+                result = self._update_event(calendar_id, existing[timetree_id]['google_id'], event, timezone)
+                if result:
+                    stats['updated'] += 1
+                    print(f"  ~ Updated: {event.get('title', 'Untitled')}")
+                else:
+                    stats['failed'] += 1
+                    print(f"  ✗ Failed: {event.get('title', 'Untitled')}")
             else:
-                stats['failed'] += 1
-                print(f"  ✗ Failed: {event.get('title', 'Untitled')}")
+                stats['skipped'] += 1
+
+        # Delete Google Calendar events that no longer exist in TimeTree
+        for timetree_id, info in existing.items():
+            if timetree_id not in timetree_ids:
+                try:
+                    self.service.events().delete(
+                        calendarId=calendar_id,
+                        eventId=info['google_id']
+                    ).execute()
+                    stats['deleted'] += 1
+                    print(f"  - Deleted: {info.get('title', 'removed event')}")
+                except HttpError:
+                    stats['failed'] += 1
 
         return stats
+
+    def _get_synced_events(self, calendar_id: str) -> Dict[str, Dict]:
+        """Fetch all Google Calendar events previously synced from TimeTree."""
+        result = {}
+        page_token = None
+        while True:
+            response = self.service.events().list(
+                calendarId=calendar_id,
+                privateExtendedProperty='timetree_synced=true',
+                maxResults=2500,
+                pageToken=page_token
+            ).execute()
+            for event in response.get('items', []):
+                private = event.get('extendedProperties', {}).get('private', {})
+                timetree_id = private.get('timetree_id')
+                if timetree_id:
+                    result[timetree_id] = {
+                        'google_id': event['id'],
+                        'hash': private.get('timetree_hash', ''),
+                        'title': event.get('summary', ''),
+                    }
+            page_token = response.get('nextPageToken')
+            if not page_token:
+                break
+        return result
+
+    def _update_event(self, calendar_id: str, google_event_id: str, event_data: Dict, timezone: str = 'UTC') -> Optional[Dict]:
+        """Update an existing Google Calendar event."""
+        google_event = self._convert_to_google_event(event_data, timezone)
+        try:
+            return self.service.events().update(
+                calendarId=calendar_id,
+                eventId=google_event_id,
+                body=google_event
+            ).execute()
+        except HttpError as error:
+            print(f"An error occurred updating event: {error}")
+            return None
+
+    @staticmethod
+    def _compute_hash(event_data: Dict) -> str:
+        """Compute a hash of the event fields we care about for change detection."""
+        key_fields = {
+            'title': event_data.get('title'),
+            'start_at': event_data.get('start_at'),
+            'end_at': event_data.get('end_at'),
+            'note': event_data.get('note'),
+            'location_name': event_data.get('location_name'),
+        }
+        return hashlib.md5(json.dumps(key_fields, sort_keys=True).encode()).hexdigest()
 
     def _clear_calendar(self, calendar_id: str) -> int:
         """
@@ -244,6 +337,13 @@ class GoogleCalendarSync:
             'end': {
                 'dateTime': end_dt.isoformat(),
                 'timeZone': timezone,
+            },
+            'extendedProperties': {
+                'private': {
+                    'timetree_synced': 'true',
+                    'timetree_id': str(event_data.get('id', '')),
+                    'timetree_hash': GoogleCalendarSync._compute_hash(event_data),
+                }
             },
         }
 

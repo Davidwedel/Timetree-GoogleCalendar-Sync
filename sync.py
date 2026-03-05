@@ -164,7 +164,10 @@ def main():
 
             print("\nSync complete!")
             print(f"  Created: {stats['created']}")
-            print(f"  Failed: {stats['failed']}")
+            print(f"  Updated: {stats['updated']}")
+            print(f"  Skipped: {stats['skipped']}")
+            print(f"  Deleted: {stats['deleted']}")
+            print(f"  Failed:  {stats['failed']}")
             if args.clear_first:
                 print(f"  Cleared: {stats['cleared']}")
 
