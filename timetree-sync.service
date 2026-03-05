@@ -1,0 +1,9 @@
+[Unit]
+Description=TimeTree to Google Calendar sync
+
+[Service]
+Type=oneshot
+WorkingDirectory=/path/to/timetreegoogle
+ExecStart=/path/to/timetreegoogle/.venv/bin/python sync.py
+StandardOutput=journal
+StandardError=journal

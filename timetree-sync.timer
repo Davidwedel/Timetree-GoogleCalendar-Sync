@@ -1,0 +1,10 @@
+[Unit]
+Description=Run TimeTree sync every 24 hours
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=24h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

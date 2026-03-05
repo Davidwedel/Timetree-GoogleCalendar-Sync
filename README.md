@@ -269,7 +269,7 @@ Contributions are welcome! Feel free to submit issues or pull requests.
 
 ## License
 
-MIT License - See LICENSE file for details
+GNU General Public License v3.0 - See LICENSE file for details
 
 ## Acknowledgments
 
