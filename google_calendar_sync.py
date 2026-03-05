@@ -65,6 +65,30 @@ class GoogleCalendarSync:
         # Build the service
         self.service = build('calendar', 'v3', credentials=self.creds)
 
+    def delete_events_by_titles(self, calendar_id: str, titles: List[str]) -> int:
+        """Delete Google Calendar events whose summaries match any of the given titles."""
+        titles_set = set(titles)
+        deleted = 0
+        page_token = None
+        while True:
+            result = self.service.events().list(
+                calendarId=calendar_id,
+                maxResults=2500,
+                pageToken=page_token
+            ).execute()
+            for event in result.get('items', []):
+                if event.get('summary') in titles_set:
+                    self.service.events().delete(
+                        calendarId=calendar_id,
+                        eventId=event['id']
+                    ).execute()
+                    print(f"  Deleted: {event.get('summary')}")
+                    deleted += 1
+            page_token = result.get('nextPageToken')
+            if not page_token:
+                break
+        return deleted
+
     def get_calendars(self) -> List[Dict]:
         """
         Get list of all calendars.

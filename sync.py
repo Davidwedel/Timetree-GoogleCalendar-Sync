@@ -60,6 +60,11 @@ def main():
         help='List available TimeTree calendars and exit',
         action='store_true'
     )
+    parser.add_argument(
+        '--delete-only',
+        help='Delete Google Calendar events matching TimeTree event names, without syncing',
+        action='store_true'
+    )
 
     args = parser.parse_args()
 
@@ -120,6 +125,19 @@ def main():
 
     if len(events) > 5:
         print(f"  ... and {len(events) - 5} more")
+
+    # Delete matching events and exit if --delete-only
+    if args.delete_only:
+        print(f"\nDeleting matching events from Google Calendar: {google_calendar_id}")
+        try:
+            sync = GoogleCalendarSync()
+            titles = [e.get('title', 'Untitled') for e in events]
+            deleted = sync.delete_events_by_titles(google_calendar_id, titles)
+            print(f"\nDeleted {deleted} event(s).")
+        except Exception as e:
+            print(f"\nError deleting events: {e}")
+            return 1
+        return 0
 
     # Export to ICS or sync to Google Calendar
     if args.output_ics:
