@@ -77,90 +77,28 @@ class TimeTreeClient:
     def get_events(
         self,
         calendar_id: str,
-        days_forward: int = 30,
-        days_back: int = 7
+        since: int = 0
     ) -> List[Dict]:
         """
-        Fetch events from a specific calendar.
+        Fetch events from a specific calendar using delta sync.
 
         Args:
             calendar_id: The TimeTree calendar ID
-            days_forward: Number of days into the future to fetch (default: 30)
-            days_back: Number of days into the past to fetch (default: 7)
+            since: Timestamp in milliseconds to fetch changes since (0 = all events)
 
         Returns:
             List of event dictionaries
         """
-        now = datetime.now()
-        # Go back further in the past to catch events
-        start = now - timedelta(days=days_back)
+        url = f"{self.BASE_URL}/api/v1/calendar/{calendar_id}/events"
+        params = {'since': since}
 
-        # Convert to milliseconds timestamp
-        # Try using 0 to get all events
-        since_ms = 0  # Get all events from beginning of time
-
-        print(f"DEBUG: Requesting events from event_activities endpoint")
-
-        # Use the event_activities/latest endpoint that actually returns events
-        url = f"{self.BASE_URL}/api/v1/event_activities/latest"
-        params = {
-            'calendar_ids[]': calendar_id
-        }
-
-        try:
-            response = self.session.get(url, params=params)
-            response.raise_for_status()
-            data = response.json()
-
-            print(f"DEBUG: Response status: {response.status_code}")
-            print(f"DEBUG: Response keys: {list(data.keys())}")
-
-            # Extract events from response - try multiple possible keys
-            events = data.get('events', [])
-
-            # If no events found, check if this is a different response format
-            if not events and 'data' in data:
-                events = data['data'].get('events', [])
-
-            # Filter out deactivated events
-            events = [e for e in events if e.get('deactivated_at') is None]
-
-            print(f"DEBUG: Raw API returned {len(events)} events")
-            if events and len(events) > 0:
-                print(f"DEBUG: First event: {events[0].get('title', 'No title')}")
-                print(f"DEBUG: First event start_at: {events[0].get('start_at')}")
-
-            # Filter to only include events within the requested date range
-            end = now + timedelta(days=days_forward)
-            end_ms = int(end.timestamp() * 1000)
-
-            print(f"DEBUG: Filtering range: {since_ms} to {end_ms}")
-
-            filtered_events = []
-            for event in events:
-                event_start = event.get('start_at', 0)
-                original_start = event_start
-                # Handle both timestamp formats (ms or ISO string)
-                if isinstance(event_start, str):
-                    try:
-                        event_start = int(datetime.fromisoformat(event_start.replace('Z', '+00:00')).timestamp() * 1000)
-                    except:
-                        print(f"DEBUG: Failed to parse date: {original_start}")
-                        continue
-
-                print(f"DEBUG: Event '{event.get('title', 'No title')}' start: {event_start}, in range: {since_ms <= event_start <= end_ms}")
-
-                if since_ms <= event_start <= end_ms:
-                    filtered_events.append(event)
-
-            print(f"DEBUG: After filtering: {len(filtered_events)} events")
-            return filtered_events
-
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching events: {e}")
-            if hasattr(e.response, 'text'):
-                print(f"Response: {e.response.text}")
-            raise
+        response = self.session.get(url, params=params)
+        response.raise_for_status()
+        data = response.json()
+        print(f"DEBUG: keys: {list(data.keys())}")
+        events = data.get('events', [])
+        events = [e for e in events if e.get('deactivated_at') is None]
+        return events
 
     def get_public_events(
         self,
@@ -221,7 +159,7 @@ def main():
     # Fetch events
     print(f"\nFetching events from calendar {calendar_id}...")
     try:
-        events = client.get_events(calendar_id, days_forward=30)
+        events = client.get_events(calendar_id)
         print(f"Found {len(events)} event(s)")
         for event in events[:5]:  # Show first 5
             print(f"  - {event.get('title', 'Untitled')}")

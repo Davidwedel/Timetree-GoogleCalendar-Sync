@@ -96,12 +96,7 @@ def main():
 
             # Fetch events
             print(f"Fetching events from calendar: {calendar_id}")
-            print(f"  Range: {args.days_back} days back to {args.days_forward} days forward")
-            events = client.get_events(
-                calendar_id,
-                days_forward=args.days_forward,
-                days_back=args.days_back
-            )
+            events = client.get_events(calendar_id)
 
     except Exception as e:
         print(f"Error connecting to TimeTree: {e}")
